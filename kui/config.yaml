@@ -1,0 +1,12 @@
+auth:
+  type: DISABLED
+kafka:
+  clusters:
+  - bootstrapServers: broker:9092
+    name: local
+    properties: {}
+    readOnly: false
+    schemaRegistry: http://broker:8085
+rbac:
+  roles: []
+webclient: {}

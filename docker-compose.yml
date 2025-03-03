@@ -1,0 +1,117 @@
+# Create a service that connect kafka and clickhouse with kafkaconnect, not using zookeeper
+networks:
+  kafka-cilckhouse-network:
+    driver: bridge
+
+services:
+  datagenerator:
+    build:
+      context: .
+      dockerfile: Dockerfile_datagenerator
+    container_name: datagenerator
+    restart: always
+    networks:
+      - kafka-cilckhouse-network
+    depends_on:
+      - kafka
+  dataconsumer:
+    build:
+      context: .
+      dockerfile: Dockerfile_dataconsumer
+    container_name: dataconsumer
+    restart: always
+    networks:
+      - kafka-cilckhouse-network
+    depends_on:
+      - kafka
+      - clickhouse
+      - datagenerator
+  kafka:
+    image: apache/kafka:latest
+    hostname: broker
+    container_name: broker
+    networks:
+      - kafka-cilckhouse-network
+    ports:
+      - "9092:9092"
+      - "8083:8083"
+      - "8085:8085"
+      - "9997:9997"
+    volumes:
+      - ./kafka_config/run/docker.sock:/var/run/docker.sock
+      - ./kafka_config/config:/mnt/shared/config
+      - ./clickhouse-kafka-connect-v1.2.8/lib:/opt/kafka/plugins/
+      - ./kafka_config/connect-configs:/opt/kafka/config/connect-configs
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONNECT:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT_HOST://broker:9092,PLAINTEXT://broker:19092,CONNECT://localhost:8083'
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@broker:29093'
+      KAFKA_LISTENERS: 'CONTROLLER://:29093,PLAINTEXT_HOST://:9092,PLAINTEXT://:19092,CONNECT://:8083'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      CLUSTER_ID: '4L6g3nShT-eMCtK--X86sw'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+
+      # Add Kafka Connect configurations
+      KAFKA_CONNECT_BOOTSTRAP_SERVERS: 'broker:9092'
+      KAFKA_CONNECT_REST_ADVERTISED_HOST_NAME: broker
+      KAFKA_CONNECT_REST_PORT: 8083
+      KAFKA_CONNECT_GROUP_ID: compose-connect-group
+      KAFKA_CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      KAFKA_CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      KAFKA_CONNECT_PLUGIN_PATH: '/opt/kafka/plugins'
+      KAFKA_CONNECT_CONFIG_STORAGE_TOPIC: connect-configs
+      KAFKA_CONNECT_OFFSET_STORAGE_TOPIC: connect-offsets
+      KAFKA_CONNECT_STATUS_STORAGE_TOPIC: connect-status
+      KAFKA_CONNECT_CONFIG_PROVIDERS: 'file'
+      KAFKA_CONNECT_CONFIG_PROVIDERS_FILE_CLASS: 'org.apache.kafka.common.config.provider.FileConfigProvider'
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    networks:
+      - kafka-cilckhouse-network
+    ports:
+      - "8080:8080"
+      - "8088:8088"
+    environment:
+      - DYNAMIC_CONFIG_ENABLED=true
+    volumes:
+      - ./kui/config.yaml:/etc/kafkaui/dynamic_config.yaml
+    depends_on:
+      - kafka
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    networks:
+      - kafka-cilckhouse-network
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./clickhouse/data:/var/lib/clickhouse
+    environment:
+      - CLICKHOUSE_DB=my_database
+      - CLICKHOUSE_USER=myuser
+      - CLICKHOUSE_PASSWORD=mypass
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+  clickhouse-ui:
+    image: ghcr.io/caioricciuti/ch-ui:latest
+    container_name: clickhouse-ui
+    restart: always
+    networks:
+      - kafka-cilckhouse-network
+    ports:
+      - "5521:5521"
+    environment:
+      - VITE_CLICKHOUSE_URL=http://localhost:8123
+      - VITE_CLICKHOUSE_USER=myuser
+      - VITE_CLICKHOUSE_PASS=mypass
+
